@@ -190,11 +190,16 @@ class Git(FetchMethod):
 
         ud.noshared = d.getVar("BB_GIT_NOSHARED") == "1"
 
+        ud.verbose = d.getVar("BB_GIT_VERBOSE_FETCH") == "1"
+
         ud.cloneflags = "-n"
         if not ud.noshared:
             ud.cloneflags += " -s"
         if ud.bareclone:
             ud.cloneflags += " --mirror"
+
+        if ud.verbose:
+            ud.cloneflags += " --verbose"
 
         ud.shallow_skip_fast = False
         ud.shallow = d.getVar("BB_GIT_SHALLOW") == "1"
@@ -426,6 +431,7 @@ class Git(FetchMethod):
         else:
             needs_clone = True
 
+
         # If the repo still doesn't exist, fallback to cloning it
         if needs_clone:
             # We do this since git will use a "-l" option automatically for local urls where possible,
@@ -436,6 +442,8 @@ class Git(FetchMethod):
                 if os.path.isdir(objects) and not os.path.islink(objects):
                     repourl = repourl_path
             clone_cmd = "LANG=C %s clone --bare --mirror %s %s --progress" % (ud.basecmd, shlex.quote(repourl), ud.clonedir)
+            if ud.verbose:
+                clone_cmd = "GIT_TRACE_PACKET=1 GIT_TRACE=2 GIT_CURL_VERBOSE=1 " + clone_cmd + " --verbose" 
             if ud.proto.lower() != 'file':
                 bb.fetch2.check_network_access(d, clone_cmd, ud.url)
             progresshandler = GitProgressHandler(d)
@@ -471,6 +479,8 @@ class Git(FetchMethod):
                 fetch_cmd = "LANG=C %s fetch -f --progress %s refs/*:refs/*" % (ud.basecmd, shlex.quote(repourl))
             else:
                 fetch_cmd = "LANG=C %s fetch -f --progress %s refs/heads/*:refs/heads/* refs/tags/*:refs/tags/*" % (ud.basecmd, shlex.quote(repourl))
+            if ud.verbose:
+                fetch_cmd = "GIT_TRACE_PACKET=1 GIT_TRACE=2 GIT_CURL_VERBOSE=1 " + fetch_cmd + " --verbose"
             if ud.proto.lower() != 'file':
                 bb.fetch2.check_network_access(d, fetch_cmd, ud.url)
             progresshandler = GitProgressHandler(d)
@@ -617,6 +627,9 @@ class Git(FetchMethod):
         if shallow_exclude:
             fetch_cmd += shallow_exclude
 
+        if ud.verbose:
+            fetch_cmd = "GIT_TRACE_PACKET=1 GIT_TRACE=2 GIT_CURL_VERBOSE=1 " + fetch_cmd + " --verbose"
+
         # Advertise the revision for lower version git such as 2.25.1:
         # error: Server does not allow request for unadvertised object.
         # The ud.clonedir is a local temporary dir, will be removed when
@@ -649,7 +662,10 @@ class Git(FetchMethod):
 
         for ref in extra_refs:
             ref_fetch = ref.replace('refs/heads/', '').replace('refs/remotes/origin/', '').replace('refs/tags/', '')
-            runfetchcmd("%s fetch origin --depth 1 %s" % (ud.basecmd, ref_fetch), d, workdir=dest)
+            extra_fetch_cmd = "%s fetch origin --depth 1 %s" % (ud.basecmd, ref_fetch)
+            if ud.verbose:
+                extra_fetch_cmd = "GIT_TRACE_PACKET=1 GIT_TRACE=2 GIT_CURL_VERBOSE=1 " + extra_fetch_cmd + " --verbose"
+            runfetchcmd(extra_fetch_cmd, d, workdir=dest)
             revision = runfetchcmd("%s rev-parse FETCH_HEAD" % ud.basecmd, d, workdir=dest)
             runfetchcmd("%s update-ref %s %s" % (ud.basecmd, ref, revision), d, workdir=dest)
 
@@ -702,7 +718,10 @@ class Git(FetchMethod):
             if update and os.path.exists(destdir):
                 update_mode = True
             else:
-                runfetchcmd("%s clone %s %s/ %s" % (ud.basecmd, ud.cloneflags, ud.clonedir, destdir), d)
+                verbose_env_vars = ""
+                if ud.verbose:
+                    verbose_env_vars = " GIT_TRACE_PACKET=1 GIT_TRACE=2 GIT_CURL_VERBOSE=1"
+                runfetchcmd("%s%s clone %s %s/ %s" % (verbose_env_vars, ud.basecmd, ud.cloneflags, ud.clonedir, destdir), d)
             source_found = True
         else:
             source_error.append("clone directory not available or not up to date: " + ud.clonedir)
